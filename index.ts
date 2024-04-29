@@ -4,24 +4,35 @@ let lastStartedGameId = 0;
 /**
  * Checks wether a game id exists or not.
  * @param gameId  The game id to check.
- * @returns True if the game id exists, false otherwise.
+ * @returns True if the game id exists, false otherwise
  */
 function isGameIdValid(gameId: string | null): gameId is string {
   return gameId != null && parseInt(gameId) <= lastStartedGameId;
 }
 
 /**
+ * Generates a random username.
+ * @returns A randomly generated username
+ */
+function generateUsername() {
+  return (Math.random() + 1).toString(36).substring(2, 8);
+}
+
+/**
  * Websocket server that relays messages to all clients subscribed to a game.
  */
-const server = Bun.serve<{ gameId: string }>({
+const server = Bun.serve<{ gameId: string; username: string }>({
   fetch(req, server) {
-	// Parse a valid game id or create a new one
-    const rawGameId = new URL(req.url).searchParams.get('gameId');
-	const gameIdInteger = isGameIdValid(rawGameId) ? rawGameId : ++lastStartedGameId;
-	const gameId = gameIdInteger.toString().padStart(4, '0');
+    // Parse a valid game id or create a new one
+    const url = new URL(req.url);
+    const rawGameId = url.searchParams.get('gameId');
+    const gameIdInteger = isGameIdValid(rawGameId) ? rawGameId : ++lastStartedGameId;
+    const gameId = gameIdInteger.toString().padStart(4, '0');
+    // Parse the provided username or generate a new one
+    const username = url.searchParams.get('username') ?? generateUsername();
 
-	// Attempt to upgrade the connection to a websocket
-    const success = server.upgrade(req, { data: { gameId } });
+    // Attempt to upgrade the connection to a websocket
+    const success = server.upgrade(req, { data: { gameId, username } });
     if (success) {
       // Bun automatically returns a 101 Switching Protocols
       // if the upgrade succeeds
@@ -32,15 +43,31 @@ const server = Bun.serve<{ gameId: string }>({
     return new Response('Hello world!');
   },
   websocket: {
-    // this is called when a message is received
+    /**
+     * Called when a client sends a message over a websocket connection.
+     * @param ws The websocket connection that sent the message
+     * @param message The message that was sent
+     */
     async message(ws, message) {
-		if (ws.isSubscribed(ws.data.gameId))
-			server.publish(ws.data.gameId, message);
-	},
-    // this is called when a connection is opened
+      if (ws.isSubscribed(ws.data.gameId)) {
+        server.publish(ws.data.gameId, message);
+      }
+    },
+    /**
+     * Called when a client opens a websocket connection.
+     * @param ws The websocket connection that was opened
+     */
     async open(ws) {
+      // Subscribe to the game events
       ws.subscribe(ws.data.gameId);
-      ws.send(`Welcome to game #${ws.data.gameId}!`);
+    },
+    /**
+     * Called when a client closes a websocket connection.
+     * @param ws The websocket connection that was closed
+     */
+    async close(ws) {
+      // Unsubscribe from the game events
+      ws.unsubscribe(ws.data.gameId);
     },
   },
 });
