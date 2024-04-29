@@ -3,11 +3,21 @@ let lastStartedGameId = 0;
 
 /**
  * Checks wether a game id exists or not.
- * @param gameId  The game id to check.
- * @returns True if the game id exists, false otherwise
+ * @param gameId  The game id to check
+ * @returns True if the game id is valid, false otherwise
  */
 function isGameIdValid(gameId: string | null): gameId is string {
-  return gameId != null && parseInt(gameId) <= lastStartedGameId;
+  return gameId != null && gameId?.length <= 64;
+}
+
+/**
+ * Checks wether a username is valid or not.
+ * @param username The username to check
+ * @returns True if the username is valid, false otherwise
+ */
+function isUsernameValid(username: string | null): username is string {
+  // petite biere a SAT ce soir = 26 characters
+  return username != null && username.length <= 26;
 }
 
 /**
@@ -25,22 +35,15 @@ const server = Bun.serve<{ gameId: string; username: string }>({
   fetch(req, server) {
     // Parse a valid game id or create a new one
     const url = new URL(req.url);
-    const rawGameId = url.searchParams.get('gameId');
-    const gameIdInteger = isGameIdValid(rawGameId) ? rawGameId : ++lastStartedGameId;
-    const gameId = gameIdInteger.toString().padStart(4, '0');
-    // Parse the provided username or generate a new one
-    const username = url.searchParams.get('username') ?? generateUsername();
-
+    const gameId = url.searchParams.get('gameId');
+    const username = url.searchParams.get('username');
     // Attempt to upgrade the connection to a websocket
-    const success = server.upgrade(req, { data: { gameId, username } });
-    if (success) {
-      // Bun automatically returns a 101 Switching Protocols
-      // if the upgrade succeeds
+    if (server.upgrade(req, { data: { gameId, username } })) {
+      // Bun automatically returns a 101 Switching Protocols if the upgrade succeeds
       return undefined;
     }
-
-    // handle HTTP request normally
-    return new Response('Hello world!');
+    // Handle HTTP request normally
+    return new Response('Hello ChaCuN world!');
   },
   websocket: {
     /**
@@ -49,16 +52,24 @@ const server = Bun.serve<{ gameId: string; username: string }>({
      * @param message The message that was sent
      */
     async message(ws, message) {
-      if (ws.isSubscribed(ws.data.gameId)) {
-        server.publish(ws.data.gameId, message);
-      }
+      ws.publish(ws.data.gameId, message);
     },
     /**
      * Called when a client opens a websocket connection.
      * @param ws The websocket connection that was opened
      */
     async open(ws) {
-      // Subscribe to the game events
+      // Check if the game data is valid
+      if (!isGameIdValid(ws.data.gameId)) {
+        ws.close(4000, 'Invalid game id provided (> 64 characters).');
+        return;
+      }
+      if (!isUsernameValid(ws.data.username)) {
+        ws.close(4001, 'Invalid username provided (> 26 characters).');
+        return;
+      }
+
+      // Subscribe to game events
       ws.subscribe(ws.data.gameId);
     },
     /**
