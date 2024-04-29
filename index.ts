@@ -1,5 +1,4 @@
-// Keep track of the number of started game sessions to generate new game ids
-let lastStartedGameId = 0;
+import asciiArt from './ascii_art.txt' with { type: 'text' };
 
 /**
  * Checks wether a game id exists or not.
@@ -21,14 +20,6 @@ function isUsernameValid(username: string | null): username is string {
 }
 
 /**
- * Generates a random username.
- * @returns A randomly generated username
- */
-function generateUsername() {
-  return (Math.random() + 1).toString(36).substring(2, 8);
-}
-
-/**
  * Websocket server that relays messages to all clients subscribed to a game.
  */
 const server = Bun.serve<{ gameId: string; username: string }>({
@@ -43,7 +34,7 @@ const server = Bun.serve<{ gameId: string; username: string }>({
       return undefined;
     }
     // Handle HTTP request normally
-    return new Response('Hello ChaCuN world!');
+    return new Response(asciiArt);
   },
   websocket: {
     /**
