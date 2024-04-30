@@ -2,9 +2,6 @@ import { $ } from 'bun';
 import asciiArt from './ascii_art.txt' with { type: 'text' };
 import { PrismaClient } from '@prisma/client';
 
-// Temporary docker fix
-await $`bunx prisma migrate deploy`;
-
 const prisma = new PrismaClient();
 
 /**

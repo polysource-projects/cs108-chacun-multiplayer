@@ -22,8 +22,6 @@ COPY --from=install /temp/dev/node_modules node_modules
 COPY . .
 
 # [optional] tests & build
-ARG DATABASE_URL
-ENV DATABASE_URL=$DATABASE_URL
 ENV NODE_ENV=production
 
 # copy production dependencies, source code, and ascii_art.txt into final image
@@ -37,7 +35,7 @@ ARG DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
 RUN mkdir prisma
 COPY --from=prerelease /usr/src/app/prisma/schema.prisma ./prisma
-# RUN DATABASE_URL=$DATABASE_URL bunx prisma migrate deploy
+RUN bunx prisma migrate deploy
 
 # run the app
 USER bun
