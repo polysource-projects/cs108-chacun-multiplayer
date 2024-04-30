@@ -31,6 +31,8 @@ COPY --from=prerelease /usr/src/app/index.ts .
 COPY --from=prerelease /usr/src/app/package.json .
 COPY --from=prerelease /usr/src/app/ascii_art.txt .
 
+RUN prisma generate
+
 # run the app
 USER bun
 EXPOSE 3000
