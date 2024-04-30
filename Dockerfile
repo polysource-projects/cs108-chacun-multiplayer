@@ -14,4 +14,4 @@ ENV DATABASE_URL=$DATABASE_URL
 
 #EXPOSE 3000
 #ENTRYPOINT [ "bun", "run", "index.ts" ]
-#ENTRYPOINT [ "tail", "-f", "/dev/null" ]
+ENTRYPOINT [ "tail", "-f", "/dev/null" ]
