@@ -13,4 +13,5 @@ ENV DATABASE_URL=$DATABASE_URL
 RUN bunx prisma generate
 
 EXPOSE 3000
-ENTRYPOINT [ "bun", "run", "index.ts" ]
+#ENTRYPOINT [ "bun", "run", "index.ts" ]
+ENTRYPOINT [ "tail", "-f", "/dev/null" ]
