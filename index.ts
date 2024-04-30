@@ -1,4 +1,7 @@
 import asciiArt from './ascii_art.txt' with { type: 'text' };
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 /**
  * Checks wether a game id exists or not.

@@ -3,10 +3,14 @@
   "module": "index.ts",
   "devDependencies": {
     "@types/bun": "latest",
-    "prettier": "^3.2.5"
+    "prettier": "^3.2.5",
+    "prisma": "^5.13.0"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@prisma/client": "5.13.0"
+  }
 }
