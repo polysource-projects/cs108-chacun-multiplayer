@@ -34,7 +34,7 @@ COPY --from=prerelease /usr/src/app/package.json .
 COPY --from=prerelease /usr/src/app/ascii_art.txt .
 RUN mkdir prisma
 COPY --from=prerelease /usr/src/app/prisma/schema.prisma ./prisma
-RUN bunx prisma migrate deploy
+RUN export DATABASE_URL=$DATABSE_URL && bunx prisma migrate deploy
 
 # run the app
 USER bun
