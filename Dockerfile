@@ -33,5 +33,5 @@ COPY --from=prerelease /usr/src/app/ascii_art.txt .
 
 # run the app
 USER bun
-EXPOSE 80
+EXPOSE 3000
 ENTRYPOINT [ "bun", "run", "index.ts" ]
