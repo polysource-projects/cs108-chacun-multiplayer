@@ -37,6 +37,8 @@ const server = Bun.serve<{ gameId: string; username: string }>({
     return new Response(asciiArt);
   },
   websocket: {
+    // Allow the server to validate game actions instead of one's client.
+    publishToSelf: true,
     /**
      * Called when a client sends a message over a websocket connection.
      * @param ws The websocket connection that sent the message
