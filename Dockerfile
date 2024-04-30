@@ -32,6 +32,9 @@ COPY --from=install /temp/prod/node_modules node_modules
 COPY --from=prerelease /usr/src/app/index.ts .
 COPY --from=prerelease /usr/src/app/package.json .
 COPY --from=prerelease /usr/src/app/ascii_art.txt .
+
+ARG DATABASE_URL
+ENV DATABASE_URL=$DATABASE_URL
 RUN mkdir prisma
 COPY --from=prerelease /usr/src/app/prisma/schema.prisma ./prisma
 RUN bunx prisma migrate deploy
