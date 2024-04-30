@@ -33,7 +33,7 @@ RUN bunx prisma migrate deploy
 RUN bunx prisma generate
 
 # > 2.e -- Copy essential files and folders
-COPY src src
+COPY . .
 
 # > 3. RUN PROJECT --
 # > 3.a -- Expose various ports as necessary
