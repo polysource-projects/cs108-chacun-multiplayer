@@ -2,14 +2,28 @@ import type { ServerWebSocket } from 'bun';
 import asciiArt from './ascii_art.txt' with { type: 'text' };
 import { PrismaClient } from '@prisma/client';
 
+interface WebsocketCtxData {
+  gameName: string;
+  username: string;
+}
+
 interface GameState {
   players: {
-    ws: ServerWebSocket<any>;
+    ws: ServerWebSocket<WebsocketCtxData>;
     username: string;
   }[];
 }
 
+enum ErrorCode {
+  InvalidGameName = 4000,
+  InvalidUsername = 4001,
+  UsernameTaken = 4003,
+  GameIsFull = 4004,
+}
+
 const MAX_PLAYERS = 5;
+const MAX_GAME_NAME_LENGTH = 32;
+const MAX_USERNAME_LENGTH = 26;
 
 const prisma = new PrismaClient();
 const games = new Map<string, GameState>();
@@ -20,7 +34,7 @@ const games = new Map<string, GameState>();
  * @returns True if the game id is valid, false otherwise
  */
 function isGameNameValid(gameName: string | null): gameName is string {
-  return gameName != null && gameName.length <= 32;
+  return gameName != null && gameName.length <= MAX_GAME_NAME_LENGTH;
 }
 
 /**
@@ -30,13 +44,13 @@ function isGameNameValid(gameName: string | null): gameName is string {
  */
 function isUsernameValid(username: string | null): username is string {
   // petite biere a SAT ce soir = 26 characters
-  return username != null && username.length <= 26;
+  return username != null && username.length <= MAX_USERNAME_LENGTH;
 }
 
 /**
  * Websocket server that relays messages to all clients subscribed to a game.
  */
-const server = Bun.serve<{ gameName: string; username: string }>({
+const server = Bun.serve<WebsocketCtxData>({
   fetch(req, server) {
     // Parse a valid game id or create a new one
     const url = new URL(req.url);
@@ -68,11 +82,17 @@ const server = Bun.serve<{ gameName: string; username: string }>({
     async open(ws) {
       // Check if the game data is valid
       if (!isGameNameValid(ws.data.gameName)) {
-        ws.close(4000, 'Invalid game id provided (> 32 characters).');
+        ws.close(
+          ErrorCode.InvalidGameName,
+          `Invalid game id provided (> ${MAX_GAME_NAME_LENGTH} characters).`
+        );
         return;
       }
       if (!isUsernameValid(ws.data.username)) {
-        ws.close(4001, 'Invalid username provided (> 26 characters).');
+        ws.close(
+          ErrorCode.InvalidUsername,
+          `Invalid username provided (> ${MAX_USERNAME_LENGTH} characters).`
+        );
         return;
       }
 
@@ -85,22 +105,19 @@ const server = Bun.serve<{ gameName: string; username: string }>({
       if (currentGame != null) {
         // Check if the username is already taken
         if (currentGame.players.some((player) => player.username === ws.data.username)) {
-          ws.close(4003, 'Username already taken.');
+          ws.close(ErrorCode.UsernameTaken, 'Username already taken.');
           return;
         }
         // Check if the game is full
         if (currentGame.players.length >= MAX_PLAYERS) {
-          ws.close(4004, 'Game is full.');
+          ws.close(ErrorCode.GameIsFull, 'Game is full.');
           return;
         }
         // Add the player to the game lobby
-        currentGame.players.push(playerData)
-      }
-      else {
+        currentGame.players.push(playerData);
+      } else {
         games.set(ws.data.gameName, { players: [playerData] });
       }
-
-      console.log(currentGame?.players)
 
       // Subscribe to game events
       ws.subscribe(ws.data.gameName);
