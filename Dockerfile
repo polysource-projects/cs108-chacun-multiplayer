@@ -24,11 +24,12 @@ COPY . .
 # [optional] tests & build
 ENV NODE_ENV=production
 
-# copy production dependencies and source code into final image
+# copy production dependencies, source code, and ascii_art.txt into final image
 FROM base AS release
 COPY --from=install /temp/prod/node_modules node_modules
 COPY --from=prerelease /usr/src/app/index.ts .
 COPY --from=prerelease /usr/src/app/package.json .
+COPY --from=prerelease /usr/src/app/ascii_art.txt .
 
 # run the app
 USER bun
