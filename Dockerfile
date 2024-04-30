@@ -30,8 +30,9 @@ COPY --from=install /temp/prod/node_modules node_modules
 COPY --from=prerelease /usr/src/app/index.ts .
 COPY --from=prerelease /usr/src/app/package.json .
 COPY --from=prerelease /usr/src/app/ascii_art.txt .
-
-RUN prisma generate
+MKDIR prisma
+COPY --from=prerelease /usr/src/app/prisma/schema.prisma ./prisma
+RUN bunx prisma migrate deploy
 
 # run the app
 USER bun
