@@ -37,7 +37,7 @@ ARG DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
 RUN mkdir prisma
 COPY --from=prerelease /usr/src/app/prisma/schema.prisma ./prisma
-RUN bunx prisma migrate deploy
+# RUN DATABASE_URL=$DATABASE_URL bunx prisma migrate deploy
 
 # run the app
 USER bun
