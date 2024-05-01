@@ -12,4 +12,5 @@ CREATE TABLE "Game" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Game_name_key" ON "Game"("name");
+CREATE UNIQUE INDEX "Game_name_hasStarted_key" ON "Game"("name", "hasStarted");
+
