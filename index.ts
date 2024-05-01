@@ -139,8 +139,8 @@ const server = Bun.serve<WebsocketCtxData>({
       });
 
       // If the game has already started, we need to end it
-      if (game === null) {
-        /*
+      /*if (game === null) {
+        
         await prisma.game.update({
           where: {
             name_hasStarted: {
@@ -154,14 +154,13 @@ const server = Bun.serve<WebsocketCtxData>({
             players: [],
           },
         });
-        */
 
         currentGame.players.forEach((player) =>
           player.ws.close(ErrorCode.PlayerLeft, `${ws.data.username} has left the game!`)
         );
         games.delete(ws.data.gameName);
         return;
-      }
+      }*/
 
       // Remove the player that left
       currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
