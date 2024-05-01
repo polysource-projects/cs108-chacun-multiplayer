@@ -19,6 +19,7 @@ enum ErrorCode {
   InvalidUsername = 4001,
   UsernameTaken = 4003,
   GameIsFull = 4004,
+  PlayerLeft = 4005,
 }
 
 const MAX_PLAYERS = 5;
@@ -127,6 +128,7 @@ const server = Bun.serve<WebsocketCtxData>({
      * @param ws The websocket connection that was closed
      */
     async close(ws) {
+      const currentGame = <GameState>games.get(ws.data.gameName);
       const game = await prisma.game.findUnique({
         where: {
           name_hasStarted: {
@@ -138,6 +140,7 @@ const server = Bun.serve<WebsocketCtxData>({
 
       // If the game has already started, we need to end it
       if (game === null) {
+        /*
         await prisma.game.update({
           where: {
             name_hasStarted: {
@@ -151,12 +154,15 @@ const server = Bun.serve<WebsocketCtxData>({
             players: [],
           },
         });
+        */
 
+        currentGame.players.forEach((player) =>
+          player.ws.close(ErrorCode.PlayerLeft, `${ws.data.username} has left the game!`)
+        );
         games.delete(ws.data.gameName);
         return;
       }
 
-      const currentGame = <GameState>games.get(ws.data.gameName);
       // Remove the player that left
       currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
 
