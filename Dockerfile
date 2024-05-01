@@ -29,8 +29,7 @@ RUN bun install
 # > 2.d -- Run prisma codegen
 ARG DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
-RUN bunx prisma migrate deploy
-RUN bunx prisma generate
+RUN bunx prisma db push
 
 # > 2.e -- Copy essential files and folders
 COPY . .
