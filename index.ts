@@ -8,6 +8,8 @@ interface WebsocketCtxData {
 }
 
 interface GameState {
+  hasStarted: boolean;
+  currentPlayerIndex?: number;
   players: {
     ws: ServerWebSocket<WebsocketCtxData>;
     username: string;
@@ -57,6 +59,7 @@ const server = Bun.serve<WebsocketCtxData>({
     const url = new URL(req.url);
     const gameName = url.searchParams.get('gameName');
     const username = url.searchParams.get('username');
+    console.log(username);
     // Attempt to upgrade the connection to a websocket
     if (server.upgrade(req, { data: { gameName, username } })) {
       // Bun automatically returns a 101 Switching Protocols if the upgrade succeeds
@@ -66,8 +69,6 @@ const server = Bun.serve<WebsocketCtxData>({
     return new Response(asciiArt);
   },
   websocket: {
-    // Allow the server to validate game actions instead of one's client.
-    publishToSelf: true,
     /**
      * Called when a client sends a message over a websocket connection.
      * @param ws The websocket connection that sent the message
@@ -117,7 +118,7 @@ const server = Bun.serve<WebsocketCtxData>({
         // Add the player to the game lobby
         currentGame.players.push(playerData);
       } else {
-        games.set(ws.data.gameName, { players: [playerData] });
+        games.set(ws.data.gameName, { players: [playerData], hasStarted: false });
       }
 
       // Subscribe to game events
@@ -127,7 +128,7 @@ const server = Bun.serve<WebsocketCtxData>({
      * Called when a client closes a websocket connection.
      * @param ws The websocket connection that was closed
      */
-    async close(ws) {
+    async close(ws, code) {
       const currentGame = <GameState>games.get(ws.data.gameName);
       const game = await prisma.game.findUnique({
         where: {
@@ -162,8 +163,17 @@ const server = Bun.serve<WebsocketCtxData>({
         return;
       }*/
 
-      // Remove the player that left
-      currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
+      if (code == ErrorCode.PlayerLeft) {
+        // Remove the player that left
+        if (currentGame.hasStarted) {
+          currentGame.players.forEach((player) =>
+            player.ws.close(ErrorCode.PlayerLeft, `${ws.data.username} has left the game!`)
+          );
+          currentGame.players = [];
+        } else {
+          currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
+        }
+      }
 
       // Delete the game if there are no more players
       if (currentGame.players.length === 0) {
