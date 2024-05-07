@@ -163,17 +163,19 @@ const server = Bun.serve<WebsocketCtxData>({
         return;
       }*/
 
-      if (code == ErrorCode.PlayerLeft) {
+      if (code == ErrorCode.PlayerLeft && currentGame.hasStarted) {
         // Remove the player that left
         if (currentGame.hasStarted) {
           currentGame.players.forEach((player) =>
             player.ws.close(ErrorCode.PlayerLeft, `${ws.data.username} has left the game!`)
           );
           currentGame.players = [];
-        } else {
-          currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
         }
       }
+
+      // Only remove the player if he was in the game before
+      if (code !== ErrorCode.InvalidGameName && code !== ErrorCode.InvalidUsername)
+        currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
 
       // Delete the game if there are no more players
       if (currentGame.players.length === 0) {
