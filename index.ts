@@ -173,8 +173,8 @@ const server = Bun.serve<WebsocketCtxData>({
         }
       }
 
-      // Only remove the player if he was in the game before
-      if (code !== ErrorCode.InvalidGameName && code !== ErrorCode.InvalidUsername)
+      // Only remove the player if he was in the game
+      if (code !== ErrorCode.UsernameTaken && code !== ErrorCode.GameIsFull)
         currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
 
       // Delete the game if there are no more players
