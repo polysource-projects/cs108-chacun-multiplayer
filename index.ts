@@ -9,19 +9,10 @@ interface WebsocketCtxData {
 
 interface GameState {
   hasStarted: boolean;
-  currentPlayerIndex?: number;
   players: {
     ws: ServerWebSocket<WebsocketCtxData>;
     username: string;
   }[];
-}
-
-enum ErrorCode {
-  InvalidGameName = 4000,
-  InvalidUsername = 4001,
-  UsernameTaken = 4003,
-  GameIsFull = 4004,
-  PlayerLeft = 4005,
 }
 
 const MAX_PLAYERS = 5;
@@ -31,13 +22,20 @@ const MAX_USERNAME_LENGTH = 26;
 const prisma = new PrismaClient();
 const games = new Map<string, GameState>();
 
+enum GameEvent {
+  Join = 'GAMEJOIN',
+  JoinDeny = 'GAMEJOIN_DENY',
+  JoinAccept = 'GAMEJOIN_ACCEPT',
+  Leave = 'GAMELEAVE',
+}
+
 /**
  * Checks wether a game name exists or not.
  * @param gameName  The game id to check
  * @returns True if the game id is valid, false otherwise
  */
-function isGameNameValid(gameName: string | null): gameName is string {
-  return gameName != null && gameName.length <= MAX_GAME_NAME_LENGTH;
+function isGameNameValid(gameName: string | undefined): gameName is string {
+  return gameName != undefined && gameName.length <= MAX_GAME_NAME_LENGTH;
 }
 
 /**
@@ -45,9 +43,65 @@ function isGameNameValid(gameName: string | null): gameName is string {
  * @param username The username to check
  * @returns True if the username is valid, false otherwise
  */
-function isUsernameValid(username: string | null): username is string {
+function isUsernameValid(username: string | undefined): username is string {
   // petite biere a SAT ce soir = 26 characters
-  return username != null && username.length <= MAX_USERNAME_LENGTH;
+  return username != undefined && username.length <= MAX_USERNAME_LENGTH;
+}
+
+function encodeMessage(event: GameEvent, data: string): string {
+  return `${event}.${data}`;
+}
+
+function validatePlayerData(ws: ServerWebSocket<WebsocketCtxData>): ws is ServerWebSocket<WebsocketCtxData> {
+  if (!isGameNameValid(ws.data.gameName)) {
+    ws.send(encodeMessage(GameEvent.JoinDeny, 'GAME_NAME_INVALID'));
+    return false;
+  }
+  if (!isUsernameValid(ws.data.username)) {
+    ws.send(encodeMessage(GameEvent.JoinDeny, 'USERNAME_INVALID'));
+    return false;
+  }
+  const game = games.get(ws.data.gameName);
+  if (game && game.players.some((player) => player.ws === ws)) {
+    ws.send(encodeMessage(GameEvent.JoinDeny, 'ALREADY_IN_GAME'));
+    return false;
+  }
+  if (game && game.players.some((player) => player.username === ws.data.username)) {
+    ws.send(encodeMessage(GameEvent.JoinDeny, 'USERNAME_TAKEN'));
+    return false;
+  }
+  return true;
+}
+
+function validateGameAvailability(ws: ServerWebSocket<WebsocketCtxData>) {
+  const game = games.get(ws.data.gameName);
+  if (game != null && game.players.length >= MAX_PLAYERS) {
+    ws.send('GAMEJOIN_DENY.GAME_FULL');
+    return false;
+  }
+  return true;
+}
+
+function addAndSubscribePlayerToGame(ws: ServerWebSocket<WebsocketCtxData>) {
+  const currentGame = games.get(ws.data.gameName);
+  if (currentGame === undefined) {
+    // Create game and add player to it
+    games.set(ws.data.gameName, { players: [{ username: ws.data.username, ws }], hasStarted: false });
+  } else {
+    // Add the player to the game lobby
+    currentGame.players.push({ username: ws.data.username, ws });
+  }
+
+  // Subscribe to the game events
+  ws.subscribe(ws.data.gameName);
+  // Send the updated list of players to all players
+  const game = <GameState>games.get(ws.data.gameName);
+  const playersData = game.players.map((player) => player.username).join(',');
+  server.publish(ws.data.gameName, encodeMessage(GameEvent.JoinAccept, playersData));
+}
+
+function removePlayerFromGame(ws: ServerWebSocket<WebsocketCtxData>) {
+
 }
 
 /**
@@ -59,7 +113,6 @@ const server = Bun.serve<WebsocketCtxData>({
     const url = new URL(req.url);
     const gameName = url.searchParams.get('gameName');
     const username = url.searchParams.get('username');
-    console.log(username);
     // Attempt to upgrade the connection to a websocket
     if (server.upgrade(req, { data: { gameName, username } })) {
       // Bun automatically returns a 101 Switching Protocols if the upgrade succeeds
@@ -75,7 +128,29 @@ const server = Bun.serve<WebsocketCtxData>({
      * @param message The message that was sent
      */
     async message(ws, message) {
-      ws.publish(ws.data.gameName, message);
+      const messageData = message.toString().split('.');
+      const [event, data] = messageData;
+
+      if (event === GameEvent.Join) {
+        const [gameName, username] = data.split(',');
+        ws.data = { gameName, username };
+
+        if (validatePlayerData(ws) && validateGameAvailability(ws)) {
+          addAndSubscribePlayerToGame(ws);
+        }
+
+        return;
+      }
+
+      if (event === GameEvent.Leave) {
+        removePlayerFromGame(ws);
+        return;
+      }
+
+      // Relay the message to all clients subscribed to the game
+      if (data) {
+        ws.publish(ws.data.gameName, data);
+      }
     },
     /**
      * Called when a client opens a websocket connection.
@@ -83,46 +158,9 @@ const server = Bun.serve<WebsocketCtxData>({
      */
     async open(ws) {
       // Check if the game data is valid
-      if (!isGameNameValid(ws.data.gameName)) {
-        ws.close(
-          ErrorCode.InvalidGameName,
-          `Invalid game id provided (> ${MAX_GAME_NAME_LENGTH} characters).`
-        );
-        return;
+      if (validatePlayerData(ws) && validateGameAvailability(ws)) {
+        addAndSubscribePlayerToGame(ws);
       }
-      if (!isUsernameValid(ws.data.username)) {
-        ws.close(
-          ErrorCode.InvalidUsername,
-          `Invalid username provided (> ${MAX_USERNAME_LENGTH} characters).`
-        );
-        return;
-      }
-
-      const currentGame = games.get(ws.data.gameName);
-      const playerData = {
-        username: ws.data.username,
-        ws: ws,
-      };
-
-      if (currentGame != null) {
-        // Check if the username is already taken
-        if (currentGame.players.some((player) => player.username === ws.data.username)) {
-          ws.close(ErrorCode.UsernameTaken, 'Username already taken.');
-          return;
-        }
-        // Check if the game is full
-        if (currentGame.players.length >= MAX_PLAYERS) {
-          ws.close(ErrorCode.GameIsFull, 'Game is full.');
-          return;
-        }
-        // Add the player to the game lobby
-        currentGame.players.push(playerData);
-      } else {
-        games.set(ws.data.gameName, { players: [playerData], hasStarted: false });
-      }
-
-      // Subscribe to game events
-      ws.subscribe(ws.data.gameName);
     },
     /**
      * Called when a client closes a websocket connection.
@@ -130,6 +168,7 @@ const server = Bun.serve<WebsocketCtxData>({
      */
     async close(ws, code) {
       const currentGame = <GameState>games.get(ws.data.gameName);
+      /*
       const game = await prisma.game.findUnique({
         where: {
           name_hasStarted: {
@@ -138,6 +177,7 @@ const server = Bun.serve<WebsocketCtxData>({
           },
         },
       });
+      */
 
       // If the game has already started, we need to end it
       /*if (game === null) {
@@ -163,6 +203,7 @@ const server = Bun.serve<WebsocketCtxData>({
         return;
       }*/
 
+      /*
       if (code == ErrorCode.PlayerLeft && currentGame.hasStarted) {
         // Remove the player that left
         if (currentGame.hasStarted) {
@@ -172,18 +213,21 @@ const server = Bun.serve<WebsocketCtxData>({
           currentGame.players = [];
         }
       }
+      */
 
-      // Only remove the player if he was in the game
-      if (code !== ErrorCode.UsernameTaken && code !== ErrorCode.GameIsFull)
-        currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
+      if (currentGame != null) {
+        // Only remove the player if he was in the game
+        if (currentGame.players.some((player) => player.ws === ws))
+          currentGame.players = currentGame.players.filter((player) => player.username !== ws.data.username);
 
-      // Delete the game if there are no more players
-      if (currentGame.players.length === 0) {
-        games.delete(ws.data.gameName);
+        // Delete the game if there are no more players
+        if (currentGame.players.length === 0) {
+          games.delete(ws.data.gameName);
+        }
+
+        // Unsubscribe from the game events
+        ws.unsubscribe(ws.data.gameName);
       }
-
-      // Unsubscribe from the game events
-      ws.unsubscribe(ws.data.gameName);
     },
   },
 });
