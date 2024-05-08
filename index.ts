@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 interface WebsocketCtxData {
   gameName: string;
   username: string;
+  lastPong: number;
 }
 
 interface GameState {
@@ -12,7 +13,6 @@ interface GameState {
   players: {
     ws: ServerWebSocket<WebsocketCtxData>;
     username: string;
-    lastPong?: number;
   }[];
 }
 
@@ -69,10 +69,6 @@ function validatePlayerData(ws: ServerWebSocket<WebsocketCtxData>, game: GameSta
     ws.send(encodeMessage(GameEvent.JoinDeny, 'USERNAME_INVALID'));
     return false;
   }
-  if (game && game.players.some((player) => player.ws === ws)) {
-    ws.send(encodeMessage(GameEvent.JoinDeny, 'ALREADY_IN_GAME'));
-    return false;
-  }
   if (game && game.players.some((player) => player.username === ws.data.username)) {
     ws.send(encodeMessage(GameEvent.JoinDeny, 'USERNAME_TAKEN'));
     return false;
@@ -124,13 +120,17 @@ function isPlayerInGame(game: GameState, username: string) {
   return game.players.some((player) => player.username === username);
 }
 
-const PING_INTERVAL = 1000 * 60 * 1;
+const PING_INTERVAL = 1000 * 60 * 0.25;
 setInterval(() => {
   games.forEach((game) => {
     game.players.forEach((player) => {
-      if (player.lastPong !== undefined && Date.now() - player.lastPong > PING_INTERVAL) {
+      const lastPing = Date.now() - PING_INTERVAL;
+      const lastPong = player.ws.data.lastPong;
+      if (lastPing - lastPong > PING_INTERVAL) {
         removePlayerFromGame(game, player.ws, 'PLAYER_TIMEOUT');
         player.ws.close(1000, 'PING_TIMEOUT');
+      } else {
+        player.ws.ping();
       }
     });
   });
@@ -154,12 +154,17 @@ const server = Bun.serve<WebsocketCtxData>({
     return new Response(asciiArt);
   },
   websocket: {
+    /**
+     * Called when a client sends a pong message over a websocket connection.
+     * @param ws The websocket connection that sent the pong message
+     */
     async pong(ws) {
       const currentGame = games.get(ws.data.gameName);
       if (currentGame) {
         const player = currentGame.players.find((player) => player.ws === ws);
         if (player) {
-          player.lastPong = Date.now();
+          console.log(`${player.username} ponged`);
+          ws.data.lastPong = Date.now();
         }
       }
     },
@@ -176,7 +181,7 @@ const server = Bun.serve<WebsocketCtxData>({
 
       if (event === GameEvent.Join) {
         const [gameName, username] = data.split(',');
-        ws.data = { gameName, username };
+        ws.data = { gameName, username, lastPong: Date.now() };
 
         if (validatePlayerData(ws, currentGame) && validateGameAvailability(ws, currentGame)) {
           addAndSubscribePlayerToGame(currentGame, ws);
@@ -218,9 +223,11 @@ const server = Bun.serve<WebsocketCtxData>({
      */
     async open(ws) {
       // Check if the game data is valid
-      if (validatePlayerData(ws) && validateGameAvailability(ws)) {
-        addAndSubscribePlayerToGame(games.get(ws.data.gameName), ws);
+      const currentGame = games.get(ws.data.gameName);
+      if (validatePlayerData(ws, currentGame) && validateGameAvailability(ws, currentGame)) {
+        addAndSubscribePlayerToGame(currentGame, ws);
       }
+      ws.data.lastPong = Date.now();
     },
     /**
      * Called when a client closes a websocket connection.
