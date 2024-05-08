@@ -27,6 +27,8 @@ enum GameEvent {
   JoinDeny = 'GAMEJOIN_DENY',
   JoinAccept = 'GAMEJOIN_ACCEPT',
   Leave = 'GAMELEAVE',
+  GameAction = 'GAMEACTION',
+  GameActionDeny = 'GAMEACTION_DENY',
 }
 
 /**
@@ -52,7 +54,11 @@ function encodeMessage(event: GameEvent, data: string): string {
   return `${event}.${data}`;
 }
 
-function validatePlayerData(ws: ServerWebSocket<WebsocketCtxData>): ws is ServerWebSocket<WebsocketCtxData> {
+function encodePlayerList(game: GameState | undefined) {
+  return game?.players.map((player) => player.username).join(',') ?? 'EMPTY';
+}
+
+function validatePlayerData(ws: ServerWebSocket<WebsocketCtxData>, game: GameState | undefined = undefined) {
   if (!isGameNameValid(ws.data.gameName)) {
     ws.send(encodeMessage(GameEvent.JoinDeny, 'GAME_NAME_INVALID'));
     return false;
@@ -61,7 +67,6 @@ function validatePlayerData(ws: ServerWebSocket<WebsocketCtxData>): ws is Server
     ws.send(encodeMessage(GameEvent.JoinDeny, 'USERNAME_INVALID'));
     return false;
   }
-  const game = games.get(ws.data.gameName);
   if (game && game.players.some((player) => player.ws === ws)) {
     ws.send(encodeMessage(GameEvent.JoinDeny, 'ALREADY_IN_GAME'));
     return false;
@@ -73,35 +78,36 @@ function validatePlayerData(ws: ServerWebSocket<WebsocketCtxData>): ws is Server
   return true;
 }
 
-function validateGameAvailability(ws: ServerWebSocket<WebsocketCtxData>) {
-  const game = games.get(ws.data.gameName);
-  if (game != null && game.players.length >= MAX_PLAYERS) {
+function validateGameAvailability(
+  ws: ServerWebSocket<WebsocketCtxData>,
+  game: GameState | undefined = undefined
+) {
+  if (game != undefined && game.players.length >= MAX_PLAYERS) {
     ws.send('GAMEJOIN_DENY.GAME_FULL');
     return false;
   }
   return true;
 }
 
-function addAndSubscribePlayerToGame(ws: ServerWebSocket<WebsocketCtxData>) {
-  const currentGame = games.get(ws.data.gameName);
-  if (currentGame === undefined) {
+function addAndSubscribePlayerToGame(game: GameState | undefined, ws: ServerWebSocket<WebsocketCtxData>) {
+  if (game === undefined) {
     // Create game and add player to it
     games.set(ws.data.gameName, { players: [{ username: ws.data.username, ws }], hasStarted: false });
   } else {
     // Add the player to the game lobby
-    currentGame.players.push({ username: ws.data.username, ws });
+    game.players.push({ username: ws.data.username, ws });
   }
 
   // Subscribe to the game events
   ws.subscribe(ws.data.gameName);
   // Send the updated list of players to all players
-  const game = <GameState>games.get(ws.data.gameName);
-  const playersData = game.players.map((player) => player.username).join(',');
-  server.publish(ws.data.gameName, encodeMessage(GameEvent.JoinAccept, playersData));
+  const playerList = encodePlayerList(games.get(ws.data.gameName));
+  server.publish(ws.data.gameName, encodeMessage(GameEvent.JoinAccept, playerList));
 }
 
-function removePlayerFromGame(ws: ServerWebSocket<WebsocketCtxData>) {
-
+function removePlayerFromGame(game: GameState, ws: ServerWebSocket<WebsocketCtxData>) {
+  game.players = game.players.filter((player) => player.username !== ws.data.username);
+  ws.publish(ws.data.gameName, encodeMessage(GameEvent.Leave, encodePlayerList(game)));
 }
 
 /**
@@ -131,25 +137,44 @@ const server = Bun.serve<WebsocketCtxData>({
       const messageData = message.toString().split('.');
       const [event, data] = messageData;
 
+      const currentGame = games.get(ws.data.gameName);
+
       if (event === GameEvent.Join) {
         const [gameName, username] = data.split(',');
         ws.data = { gameName, username };
 
-        if (validatePlayerData(ws) && validateGameAvailability(ws)) {
-          addAndSubscribePlayerToGame(ws);
+        if (validatePlayerData(ws, currentGame) && validateGameAvailability(ws, currentGame)) {
+          addAndSubscribePlayerToGame(currentGame, ws);
         }
 
         return;
       }
 
       if (event === GameEvent.Leave) {
-        removePlayerFromGame(ws);
+        if (currentGame) {
+          removePlayerFromGame(currentGame, ws);
+        }
         return;
       }
 
-      // Relay the message to all clients subscribed to the game
-      if (data) {
-        ws.publish(ws.data.gameName, data);
+      if (event === GameEvent.GameAction) {
+        // Start the game if the player count is enough
+        if (
+          currentGame !== undefined &&
+          !currentGame.hasStarted &&
+          currentGame.players.length >= 2 &&
+          // Check if the player that tried to start the game is the game owner
+          ws.data.username === currentGame.players[0].username
+        ) {
+          currentGame.hasStarted = true;
+        } else {
+          ws.send(encodeMessage(GameEvent.GameActionDeny, 'GAME_NOT_STARTED'));
+          return;
+        }
+        // Relay the message to all clients subscribed to the game
+        if (currentGame?.hasStarted) {
+          ws.publish(ws.data.gameName, encodeMessage(GameEvent.GameAction, data));
+        }
       }
     },
     /**
@@ -159,7 +184,7 @@ const server = Bun.serve<WebsocketCtxData>({
     async open(ws) {
       // Check if the game data is valid
       if (validatePlayerData(ws) && validateGameAvailability(ws)) {
-        addAndSubscribePlayerToGame(ws);
+        addAndSubscribePlayerToGame(undefined, ws);
       }
     },
     /**
