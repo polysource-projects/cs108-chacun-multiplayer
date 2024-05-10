@@ -163,7 +163,6 @@ const server = Bun.serve<WebsocketCtxData>({
       if (currentGame) {
         const player = currentGame.players.find((player) => player.ws === ws);
         if (player) {
-          console.log(`${player.username} ponged`);
           ws.data.lastPong = Date.now();
         }
       }
@@ -177,11 +176,11 @@ const server = Bun.serve<WebsocketCtxData>({
       const messageData = message.toString().split('.');
       const [event, data] = messageData;
 
-      const currentGame = games.get(ws.data.gameName);
-
+      let currentGame = games.get(ws.data.gameName);
       if (event === GameEvent.Join) {
         const [gameName, username] = data.split(',');
         ws.data = { gameName, username, lastPong: Date.now() };
+        currentGame = games.get(ws.data.gameName);
 
         if (validatePlayerData(ws, currentGame) && validateGameAvailability(ws, currentGame)) {
           addAndSubscribePlayerToGame(currentGame, ws);
@@ -199,6 +198,7 @@ const server = Bun.serve<WebsocketCtxData>({
 
       if (event === GameEvent.GameAction) {
         // Start the game if the player count is enough
+        console.log(currentGame)
         if (
           currentGame !== undefined &&
           !currentGame.hasStarted &&
@@ -212,7 +212,7 @@ const server = Bun.serve<WebsocketCtxData>({
           return;
         }
         // Relay the message to all clients subscribed to the game
-        if (currentGame?.hasStarted) {
+        if (currentGame.hasStarted) {
           ws.publish(ws.data.gameName, encodeMessage(GameEvent.GameAction, data));
         }
       }
