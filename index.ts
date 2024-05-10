@@ -197,22 +197,24 @@ const server = Bun.serve<WebsocketCtxData>({
       }
 
       if (event === GameEvent.GameAction) {
-        // Start the game if the player count is enough
-        console.log(currentGame)
-        if (
-          currentGame !== undefined &&
-          !currentGame.hasStarted &&
-          currentGame.players.length >= 2 &&
-          // Check if the player that tried to start the game is the game owner
-          ws.data.username === currentGame.players[0].username
-        ) {
-          currentGame.hasStarted = true;
-        } else {
-          ws.send(encodeMessage(GameEvent.GameActionDeny, 'GAME_NOT_STARTED'));
-          return;
-        }
-        // Relay the message to all clients subscribed to the game
-        if (currentGame.hasStarted) {
+        // Check if the player is in a game
+        if (currentGame !== undefined && isPlayerInGame(currentGame, ws.data.username)) {
+          // Start the game if the player count is enough
+          if (
+            !currentGame.hasStarted &&
+            currentGame.players.length >= 2 &&
+            // Check if the player that tried to start the game is the game owner
+            ws.data.username === currentGame.players[0].username
+          ) {
+            currentGame.hasStarted = true;
+          }
+
+          if (!currentGame?.hasStarted) {
+            ws.send(encodeMessage(GameEvent.GameActionDeny, 'GAME_NOT_STARTED'));
+            return;
+          }
+
+          // Relay the message to all clients subscribed to the game
           ws.publish(ws.data.gameName, encodeMessage(GameEvent.GameAction, data));
         }
       }
