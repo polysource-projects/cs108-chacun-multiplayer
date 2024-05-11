@@ -31,6 +31,7 @@ enum GameEvent {
   GameAction = 'GAMEACTION',
   GameActionDeny = 'GAMEACTION_DENY',
   GameEnd = 'GAMEEND',
+  GameMessage = 'GAMEMSG',
 }
 
 /**
@@ -120,7 +121,7 @@ function isPlayerInGame(game: GameState, username: string) {
   return game.players.some((player) => player.username === username);
 }
 
-const PING_INTERVAL = 1000 * 60 * 0.25;
+const PING_INTERVAL = 1000 * 60 * 1;
 setInterval(() => {
   games.forEach((game) => {
     game.players.forEach((player) => {
@@ -216,6 +217,12 @@ const server = Bun.serve<WebsocketCtxData>({
 
           // Relay the message to all clients subscribed to the game
           ws.publish(ws.data.gameName, encodeMessage(GameEvent.GameAction, data));
+        }
+      }
+
+      if (event === GameEvent.GameMessage) {
+        if (currentGame !== undefined && isPlayerInGame(currentGame, ws.data.username)) {
+          server.publish(ws.data.gameName, encodeMessage(GameEvent.GameMessage, encodeURI(data)));
         }
       }
     },
