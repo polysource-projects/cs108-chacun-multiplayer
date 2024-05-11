@@ -81,7 +81,11 @@ function validateGameAvailability(
   ws: ServerWebSocket<WebsocketCtxData>,
   game: GameState | undefined = undefined
 ) {
-  if (game != undefined && game.players.length >= MAX_PLAYERS) {
+  if (game !== undefined && game.hasStarted) {
+    ws.send('GAMEJOIN_DENY.GAME_STARTED');
+    return false;
+  }
+  if (game !== undefined && game.players.length >= MAX_PLAYERS) {
     ws.send('GAMEJOIN_DENY.GAME_FULL');
     return false;
   }
