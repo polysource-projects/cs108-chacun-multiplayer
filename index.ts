@@ -221,8 +221,9 @@ const server = Bun.serve<WebsocketCtxData>({
       }
 
       if (event === GameEvent.GameMessage) {
-        if (currentGame !== undefined && isPlayerInGame(currentGame, ws.data.username)) {
-          server.publish(ws.data.gameName, encodeMessage(GameEvent.GameMessage, encodeURI(data)));
+        if (currentGame !== undefined && isPlayerInGame(currentGame, ws.data.username) && data !== '') {
+          const playerAndMessage = `${ws.data.username}=${data}`;
+          server.publish(ws.data.gameName, encodeMessage(GameEvent.GameMessage, encodeURI(playerAndMessage)));
         }
       }
     },
